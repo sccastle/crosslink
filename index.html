@@ -290,6 +290,13 @@ function load(){
     if(!d.settings.remindDays)d.settings.remindDays=3;
     d.banks=d.banks||[];d.traders=d.traders||[];d.events=d.events||[];d.notes=d.notes||[];
     d.events.forEach(function(e){e.photos=e.photos||[];});
+    var legacy={A:30,B:60,C:90};
+    d.traders.forEach(function(t){
+      if(typeof t.days==="number"&&t.days>0)return;
+      var v=null;
+      if(d.settings.tiers)d.settings.tiers.forEach(function(x){if(x.k===t.tier)v=x.d;});
+      t.days=v||legacy[t.tier]||60;
+    });
     return d;
   }catch(e){storeOK=false;return blank();}
 }
@@ -318,14 +325,8 @@ function cycleRange(){
   return{s:iso(new Date(y,q*3,1)),e:iso(new Date(y,q*3+3,0)),label:y+" Q"+(q+1)};
 }
 
-function tiers(){return db.settings.tiers;}
-function tierDays(k){
-  var l=tiers();
-  for(var i=0;i<l.length;i++)if(l[i].k===k)return l[i].d;
-  return l.length?l[0].d:60;
-}
-function tierKeys(){return tiers().map(function(x){return x.k;});}
-function defTier(){return tiers().length?tiers()[0].k:"B";}
+var DEF_DAYS=60;
+function goalDays(t){return (t&&t.days)?t.days:DEF_DAYS;}
 function types(){return db.settings.types;}
 function sortedBanks(){
   return db.banks.slice().sort(function(a,b){
@@ -351,7 +352,7 @@ function tracked(t){return pinned(t.bankId);}
 function isOverdue(t){
   if(!tracked(t))return false;
   var d=overdueDays(t);
-  return d===null?true:d>tierDays(t.tier||defTier());
+  return d===null?true:d>goalDays(t);
 }
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){
   return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
@@ -522,13 +523,13 @@ function birthdayBlock(){
 
 /* ---------- 客户管理 ---------- */
 function traderRow(t,withBank){
-  var d=overdueDays(t),lim=tierDays(t.tier||defTier());
+  var d=overdueDays(t),lim=goalDays(t);
   var cls=tracked(t)?(d===null?"hot":(d>lim?"warn":"")):"";
   var txt=d===null?"未应酬":(d===0?"今天":d+"天");
   return "<button class='trow' data-act='trader' data-id='"+t.id+"'>"+
     "<span class='lamp"+(seenThisCycle(t.id)?" on":"")+"'></span>"+
     "<span class='tname'>"+esc(t.name)+(withBank?"<span class='sub'> · "+esc(bankName(t.bankId))+"</span>":"")+"</span>"+
-    "<span class='tier'>"+esc(t.tier||"B")+"</span>"+
+    "<span class='tier'>"+goalDays(t)+"天</span>"+
     "<span class='ago "+cls+"'>"+txt+"</span></button>";
 }
 function clientBlock(){
@@ -682,11 +683,12 @@ function viewWeekly(){
        (isToday?" · 今天":"")+"</span></summary><div class='foldbody'>";
     de.forEach(function(e){h+=evCard(e);});
     dn.forEach(function(n){
-      h+="<div class='note'><span class='tag'>"+esc(n.mod)+"</span>"+
+      h+="<div class='note' data-nid='"+n.id+"' data-nd='"+n.date+"'><span class='tag'>"+esc(n.mod)+"</span>"+
          "<span class='ntx'>"+esc(n.text)+"</span>"+
          "<button class='btn sm danger' data-act='delNote' data-id='"+n.id+"'>删</button></div>";
     });
     if(!dn.length&&!de.length)h+="<div class='sub'>这天还没记东西。</div>";
+    else if(dn.length)h+="<div class='sub' style='margin-top:7px'>长按某条可以改</div>";
     h+="<div class='row' style='margin-top:10px'><button class='btn sm' data-act='addNote' data-d='"+ds+"'>记一条</button></div>";
     h+="</div></details>";
   }
@@ -729,7 +731,7 @@ function sheetNote(ds,id){
     "<div class='field'><label>NOTE 素材</label><textarea id='n_text' style='min-height:110px' placeholder='一句事实 + 一句所以呢'>"+esc(n.text)+"</textarea>"+
     "<div class='hint'>写清楚影响或下一步，周末才不用重新回忆</div></div>"+
     "<button class='btn pri wide' data-act='saveNote' data-d='"+ds+"' data-id='"+(id||"")+"'>保存</button>";
-  openSheet(cn(ds)+" 记一条",b,function(root){
+  openSheet(cn(ds)+(id?" 改一条":" 记一条"),b,function(root){
     root.querySelector("#n_mod").addEventListener("click",function(ev){
       var t=ev.target.closest("button[data-m]");if(!t)return;
       Array.prototype.forEach.call(this.children,function(c){c.classList.remove("on");});
@@ -760,7 +762,7 @@ function sheetTrader(id){
     "<dt>本轮</dt><dd>"+(seenThisCycle(id)?"已应酬":"<span style='color:var(--brass)'>未应酬</span>")+"</dd>"+
     "<dt>上次</dt><dd class='num'>"+(ls?cn(ls)+"（"+d+" 天前）":"没有记录")+"</dd>"+
     "<dt>累计</dt><dd class='num'>"+evs.length+" 次</dd>"+
-    "<dt>分级</dt><dd>"+esc(t.tier||defTier())+" 类 · 目标 "+tierDays(t.tier||defTier())+" 天一次"+
+    "<dt>频率</dt><dd>目标 "+goalDays(t)+" 天一次"+
       (tracked(t)?"":"（本行未置顶，不提醒）")+"</dd>"+
     (t.birthday?"<dt>生日</dt><dd class='num'>"+esc(t.birthday)+"</dd>":"")+
     (t.title?"<dt>职务</dt><dd>"+esc(t.title)+"</dd>":"")+
@@ -780,15 +782,18 @@ function sheetTrader(id){
   openSheet(t.name,b);
 }
 function sheetEditTrader(id,bankId){
-  var t=id?trader(id):{tier:defTier(),bankId:bankId||(db.banks[0]&&db.banks[0].id)};
+  var t=id?trader(id):{days:DEF_DAYS,bankId:bankId||(db.banks[0]&&db.banks[0].id)};
   var opts=db.banks.map(function(b){
     return "<option value='"+b.id+"'"+(b.id===t.bankId?" selected":"")+">"+esc(b.name)+"</option>";}).join("");
   var b="<div class='field'><label>NAME 姓名</label><input id='f_name' value='"+esc(t.name||"")+"'></div>"+
     "<div class='field'><label>BANK 银行</label><select id='f_bank'>"+opts+"</select></div>"+
-    "<div class='field'><label>TIER 分级</label><select id='f_tier'>"+
-      tierKeys().map(function(x){return "<option"+(x===(t.tier||defTier())?" selected":"")+">"+x+"</option>";}).join("")+
-      "</select><div class='hint'>"+tiers().map(function(x){return x.k+" "+x.d+" 天";}).join(" · ")+
-      "，超了进「该约了」。分级可在设置里增删</div></div>"+
+    "<div class='field'><label>FREQ 多久应酬一次</label>"+
+      "<div class='row' style='flex-wrap:nowrap;align-items:center'>"+
+      "<input type='number' id='f_days' min='1' value='"+goalDays(t)+"' style='max-width:100px'>"+
+      "<span class='sub' style='flex:none'>天</span>"+
+      [14,30,60,90].map(function(x){
+        return "<button type='button' class='btn sm' data-preset='"+x+"'>"+x+"</button>";}).join("")+
+      "</div><div class='hint'>超过这个天数没见就进「该约了」，只对置顶银行生效</div></div>"+
     "<div class='field'><label>BIRTHDAY 生日</label><input id='f_bd' type='date' value='"+esc(t.birthday||"")+"'></div>"+
     "<div class='field'><label>TITLE 职务</label><input id='f_title' value='"+esc(t.title||"")+"'></div>"+
     "<div class='field'><label>PRODUCT 做的产品</label><input id='f_prod' placeholder='掉期 / NDF / CCS / IRS' value='"+esc(t.products||"")+"'></div>"+
@@ -796,7 +801,14 @@ function sheetEditTrader(id,bankId){
     "<div class='field'><label>HOBBY 爱好</label><input id='f_hobby' value='"+esc(t.hobby||"")+"'></div>"+
     "<div class='field'><label>NOTE 备注</label><textarea id='f_note'>"+esc(t.note||"")+"</textarea></div>"+
     "<button class='btn pri wide' data-act='saveTrader' data-id='"+(id||"")+"'>保存</button>";
-  openSheet(id?"编辑 "+t.name:"新交易员",b);
+  openSheet(id?"编辑 "+t.name:"新交易员",b,function(root){
+    root.addEventListener("click",function(ev){
+      var pr=ev.target.closest("button[data-preset]");
+      if(!pr)return;
+      var f=document.getElementById("f_days");
+      if(f)f.value=pr.dataset.preset;
+    });
+  });
 }
 
 /* ---------- 应酬记录 ---------- */
@@ -1018,13 +1030,6 @@ function sheetSettings(){
     [["month","月"],["quarter","季度"],["half","半年"]].map(function(x){
       return "<button type='button' data-c='"+x[0]+"' class='"+(c===x[0]?"on":"")+"'>"+x[1]+"</button>";}).join("")+
     "</div><div class='hint'>灯在每个新轮次自动清零</div></div>";
-  b+="<h2 class='sec'>分级与频率<small>"+tiers().length+" 档</small></h2>";
-  tiers().forEach(function(x,i){
-    b+="<div class='tierrow'><input value='"+esc(x.k)+"' data-tk='"+i+"' style='max-width:70px'>"+
-       "<input type='number' value='"+x.d+"' data-td='"+i+"' style='max-width:90px'><span class='sub'>天</span>"+
-       "<button class='btn sm danger' data-act='delTier' data-i='"+i+"'>删</button></div>";});
-  b+="<div class='row' style='margin-top:10px'><button class='btn sm' data-act='saveTiers'>保存分级</button>"+
-     "<button class='btn sm' data-act='addTier'>加一档</button></div>";
   b+="<h2 class='sec'>手机日历</h2>"+
      "<div class='row' style='flex-wrap:nowrap;align-items:center'><span class='sub' style='flex:none'>提前</span>"+
      "<input type='number' id='remDays' value='"+(db.settings.remindDays||3)+"' style='max-width:80px'>"+
@@ -1094,11 +1099,11 @@ function loadDemo(){
   var b1=uid(),b2=uid(),b3=uid();
   db.banks=[{id:b1,name:"招商银行",pinned:true},{id:b2,name:"兴业银行",pinned:true},{id:b3,name:"平安银行"}];
   var t=[
-    {id:uid(),bankId:b1,name:"张伟",tier:"A",status:"active",birthday:"1988-09-14",products:"掉期 / 超短",taste:"不吃辣",title:"高级交易员"},
-    {id:uid(),bankId:b1,name:"李敏",tier:"B",status:"active",birthday:"1991-09-06",products:"NDF"},
-    {id:uid(),bankId:b2,name:"陈浩",tier:"A",status:"active",products:"CCS",hobby:"高尔夫"},
-    {id:uid(),bankId:b2,name:"王倩",tier:"C",status:"active"},
-    {id:uid(),bankId:b3,name:"刘洋",tier:"B",status:"active",products:"掉期"}
+    {id:uid(),bankId:b1,name:"张伟",days:30,status:"active",birthday:"1988-09-14",products:"掉期 / 超短",taste:"不吃辣",title:"高级交易员"},
+    {id:uid(),bankId:b1,name:"李敏",days:60,status:"active",birthday:"1991-09-06",products:"NDF"},
+    {id:uid(),bankId:b2,name:"陈浩",days:30,status:"active",products:"CCS",hobby:"高尔夫"},
+    {id:uid(),bankId:b2,name:"王倩",days:90,status:"active"},
+    {id:uid(),bankId:b3,name:"刘洋",days:60,status:"active",products:"掉期"}
   ];
   db.traders=t;
   var d1=new Date();d1.setDate(d1.getDate()-6);
@@ -1133,28 +1138,6 @@ document.addEventListener("click",function(ev){
     toast(pb.pinned?"已置顶，这家行的人会进「该约了」":"已取消置顶，不再提醒");
   }
   else if(a==="bankMenu")sheetBank(id);
-  else if(a==="addTier"){
-    tiers().push({k:"新",d:60});save();sheetSettings();
-  }
-  else if(a==="delTier"){
-    if(tiers().length<=1){toast("至少留一档");return;}
-    tiers().splice(+el.dataset.i,1);save();sheetSettings();render();
-  }
-  else if(a==="saveTiers"){
-    var ok=true;
-    Array.prototype.forEach.call(document.querySelectorAll("[data-tk]"),function(inp){
-      var i=+inp.dataset.tk,v=inp.value.trim();
-      if(!v){ok=false;return;}
-      tiers()[i].k=v;
-    });
-    Array.prototype.forEach.call(document.querySelectorAll("[data-td]"),function(inp){
-      var i=+inp.dataset.td,v=parseInt(inp.value,10);
-      if(!v||v<1){ok=false;return;}
-      tiers()[i].d=v;
-    });
-    if(!ok){toast("名称和天数都要填");return;}
-    save();sheetSettings();render();toast("分级已更新");
-  }
   else if(a==="toggleRemEv"){
     db.settings.remindEvent=db.settings.remindEvent===false;
     save();sheetSettings();
@@ -1218,7 +1201,10 @@ document.addEventListener("click",function(ev){
     var name=val("f_name");
     if(!name){toast("填个名字");return;}
     var o=id?trader(id):{id:uid(),status:"active"};
-    o.name=name;o.bankId=val("f_bank");o.tier=val("f_tier");o.birthday=val("f_bd");
+    o.name=name;o.bankId=val("f_bank");o.birthday=val("f_bd");
+    var dv=parseInt(val("f_days"),10);
+    o.days=(dv&&dv>0)?dv:DEF_DAYS;
+    delete o.tier;
     o.title=val("f_title");o.products=val("f_prod");o.taste=val("f_taste");
     o.hobby=val("f_hobby");o.note=val("f_note");
     if(!id)db.traders.push(o);
@@ -1358,16 +1344,22 @@ document.getElementById("view").addEventListener("toggle",function(ev){
   var timer=null,fired=false,sx=0,sy=0;
   var view=document.getElementById("view");
   function clear(){if(timer){clearTimeout(timer);timer=null;}}
+  function targetAt(el){
+    var sum=el.closest("details.bank>summary");
+    if(sum)return function(){sheetBank(sum.parentNode.dataset.bank);};
+    var nt=el.closest(".note");
+    if(nt&&!el.closest("[data-act]"))return function(){sheetNote(nt.dataset.nd,nt.dataset.nid);};
+    return null;
+  }
   view.addEventListener("pointerdown",function(ev){
-    var sum=ev.target.closest("details.bank>summary");
-    if(!sum)return;
-    var bid=sum.parentNode.dataset.bank;
+    var fn=targetAt(ev.target);
+    if(!fn)return;
     sx=ev.clientX;sy=ev.clientY;fired=false;
     clear();
     timer=setTimeout(function(){
       fired=true;
       if(navigator.vibrate)navigator.vibrate(18);
-      sheetBank(bid);
+      fn();
     },520);
   });
   view.addEventListener("pointermove",function(ev){
@@ -1381,8 +1373,8 @@ document.getElementById("view").addEventListener("toggle",function(ev){
     if(fired){ev.preventDefault();ev.stopPropagation();fired=false;}
   },true);
   view.addEventListener("contextmenu",function(ev){
-    var sum=ev.target.closest("details.bank>summary");
-    if(sum){ev.preventDefault();sheetBank(sum.parentNode.dataset.bank);}
+    var fn=targetAt(ev.target);
+    if(fn){ev.preventDefault();fn();}
   });
 })();
 document.addEventListener("keydown",function(e){if(e.key==="Escape")closeSheet();});
