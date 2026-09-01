@@ -82,12 +82,16 @@ h2.sec small{font-family:var(--mono);font-size:11px;font-weight:400;letter-spaci
   background:none;color:var(--paper);cursor:pointer;display:flex;align-items:center;justify-content:center;
   font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums;position:relative}
 .day.out{color:var(--dim2)}
-.day.today>span{border-bottom:1px solid var(--brass);padding-bottom:1px}
-.day.plan{background:rgba(155,138,216,.17)}
-.day.done{background:rgba(219,228,240,.07);color:var(--dim);
-  background-image:linear-gradient(to top right,transparent calc(50% - .5px),rgba(219,228,240,.3) calc(50% - .5px),rgba(219,228,240,.3) calc(50% + .5px),transparent calc(50% + .5px))}
-.day.done.plan{background-color:rgba(155,138,216,.17);color:var(--paper)}
-.day.sel{box-shadow:inset 0 0 0 1px var(--brass)}
+.day.today .dnum{border-bottom:1px solid var(--brass);padding-bottom:1px}
+.dnum{position:relative;z-index:2}
+.half{position:absolute;left:0;right:0;height:50%;z-index:1;pointer-events:none}
+.half.top{top:0;border-bottom:1px solid rgba(11,15,26,.5)}
+.half.bot{bottom:0}
+.s-need{background:rgba(230,201,110,.38)}
+.s-set{background:rgba(120,170,220,.34)}
+.s-done{background:rgba(219,228,240,.09);
+  background-image:linear-gradient(to top right,transparent calc(50% - .5px),rgba(219,228,240,.34) calc(50% - .5px),rgba(219,228,240,.34) calc(50% + .5px),transparent calc(50% + .5px))}
+.day.sel{box-shadow:inset 0 0 0 1px var(--brass);z-index:3}
 .legend{display:flex;gap:16px;margin-top:9px;font-family:var(--mono);font-size:10.5px;color:var(--dim2);letter-spacing:.04em}
 .legend{flex-wrap:wrap;row-gap:5px}
 .legend i.lg{display:inline-block;width:12px;height:12px;vertical-align:-2px;margin-right:5px;border:1px solid var(--line)}
@@ -273,7 +277,7 @@ var storeOK=true, db=null;
 var DEF_TYPES=["饭局","酒局","咖啡","高尔夫","运动","拜访","其他"];
 
 var DEF_TIERS=[{k:"A",d:30},{k:"B",d:60},{k:"C",d:90}];
-function blank(){return{v:5,settings:{cycle:"quarter",types:DEF_TYPES.slice(),tiers:JSON.parse(JSON.stringify(DEF_TIERS)),remindDays:5},banks:[],traders:[],events:[],notes:[]};}
+function blank(){return{v:5,settings:{cycle:"quarter",types:DEF_TYPES.slice(),tiers:JSON.parse(JSON.stringify(DEF_TIERS)),remindDays:3},banks:[],traders:[],events:[],notes:[]};}
 function load(){
   try{
     var raw=localStorage.getItem(KEY);
@@ -283,7 +287,7 @@ function load(){
     d.settings.cycle=d.settings.cycle||"quarter";
     if(!d.settings.types||!d.settings.types.length)d.settings.types=DEF_TYPES.slice();
     if(!d.settings.tiers||!d.settings.tiers.length)d.settings.tiers=JSON.parse(JSON.stringify(DEF_TIERS));
-    if(!d.settings.remindDays)d.settings.remindDays=5;
+    if(!d.settings.remindDays)d.settings.remindDays=3;
     d.banks=d.banks||[];d.traders=d.traders||[];d.events=d.events||[];d.notes=d.notes||[];
     d.events.forEach(function(e){e.photos=e.photos||[];});
     return d;
@@ -869,7 +873,7 @@ function sheetEvent(id,preDate,preTrader,planned){
     (id&&!e.done?"<div class='row' style='margin-top:9px;flex-wrap:nowrap'>"+
       "<button class='btn' style='flex:1' data-act='ics' data-id='"+id+"'>下载 .ics</button>"+
       "<button class='btn' style='flex:1' data-act='gcal' data-id='"+id+"'>加到 Google 日历</button></div>"+
-      "<div class='hint'>.ics 带提前 "+db.settings.remindDays+" 天的提醒；Google 链接更快但只有默认提醒</div>":"")+
+      "<div class='hint'>.ics 会带一条提前 "+(db.settings.remindDays||3)+" 天、中午 12 点的提醒；Google 链接更快但只有默认提醒</div>":"")+
     (id?"<button class='btn danger wide' style='margin-top:9px' data-act='delEvent' data-id='"+id+"'>删除这条记录</button>":"");
   openSheet(id?"编辑记录":(planned?"新计划":"记一次应酬"),b,function(root){
     root.querySelector("#f_slot").addEventListener("click",function(ev){
@@ -911,32 +915,70 @@ function evTitle(e){
   var names=e.traderIds.map(function(id){var t=trader(id);return t?t.name:"";}).filter(Boolean).join("、");
   return (e.type||"应酬")+"："+(names||"待定");
 }
+function remindTitle(e){
+  return (e.place?"确认安排：":"订位：")+evTitle(e);
+}
 function evDesc(e){
   var names=e.traderIds.map(function(id){
     var t=trader(id);return t?bankName(t.bankId)+" "+t.name:"";}).filter(Boolean).join("、");
   var l=[];
   if(names)l.push("在场："+names);
-  if(!e.place)l.push("地点未定，需要订位");
+  l.push(e.place?("地点："+e.place):"地点未定，需要订位");
   if(e.topic)l.push(e.topic);
   if(e.followup)l.push("跟进："+e.followup);
-  return l.join("\n");
+  return l.join("；");
 }
-function icsEsc(t){return String(t||"").replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\n/g,"\\n");}
+function icsEsc(t){return String(t||"").replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\n/g,"；");}
+var VTZ=["BEGIN:VTIMEZONE","TZID:Asia/Shanghai","BEGIN:STANDARD","DTSTART:19910915T000000",
+  "TZOFFSETFROM:+0900","TZOFFSETTO:+0800","TZNAME:CST","END:STANDARD","END:VTIMEZONE"];
+function utcStamp(x){
+  return x.getUTCFullYear()+pad(x.getUTCMonth()+1)+pad(x.getUTCDate())+"T"+
+    pad(x.getUTCHours())+pad(x.getUTCMinutes())+"00Z";
+}
+/* 北京时间当天 12:00 对应的 UTC 戳，和手机所在时区无关 */
+function bjNoonUTC(d){return d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+"T040000Z";}
+function remindAt(e){
+  var d=parse(e.date),rd=db.settings.remindDays||3;
+  return new Date(d.getFullYear(),d.getMonth(),d.getDate()-rd,12,0,0);
+}
 function icsEvent(e){
-  var t=evTimes(e),rd=db.settings.remindDays||5;
-  return ["BEGIN:VEVENT","UID:"+e.id+"@crosslink","DTSTAMP:"+stampLocal(new Date()),
-    "DTSTART:"+stampLocal(t.s),"DTEND:"+stampLocal(t.e),
+  var t=evTimes(e),ra=remindAt(e);
+  var out=["BEGIN:VEVENT","UID:"+e.id+"@crosslink","DTSTAMP:"+utcStamp(new Date()),
+    "DTSTART;TZID=Asia/Shanghai:"+stampLocal(t.s),
+    "DTEND;TZID=Asia/Shanghai:"+stampLocal(t.e),
     "SUMMARY:"+icsEsc(evTitle(e)),
     "LOCATION:"+icsEsc(e.place||""),
-    "DESCRIPTION:"+icsEsc(evDesc(e)),
-    "BEGIN:VALARM","ACTION:DISPLAY","TRIGGER:-P"+rd+"D",
-    "DESCRIPTION:"+icsEsc(e.place?("确认安排："+evTitle(e)):("该订地方了："+evTitle(e))),
-    "END:VALARM","END:VEVENT"].join("\r\n");
+    "DESCRIPTION:"+icsEsc(evDesc(e))];
+  if(ra.getTime()>Date.now()-86400000){
+    out=out.concat(["BEGIN:VALARM","ACTION:DISPLAY",
+      "TRIGGER;VALUE=DATE-TIME:"+bjNoonUTC(ra),
+      "DESCRIPTION:"+icsEsc(remindTitle(e)),"END:VALARM"]);
+  }
+  out.push("END:VEVENT");
+  return out.join("\r\n");
+}
+/* 一条独立的提醒日程：安卓上比 VALARM 可靠得多 */
+function icsRemind(e){
+  var ra=remindAt(e);
+  var en=new Date(ra.getTime()+1800000);
+  return ["BEGIN:VEVENT","UID:"+e.id+"-r@crosslink","DTSTAMP:"+utcStamp(new Date()),
+    "DTSTART;TZID=Asia/Shanghai:"+stampLocal(ra),
+    "DTEND;TZID=Asia/Shanghai:"+stampLocal(en),
+    "SUMMARY:"+icsEsc(remindTitle(e)),
+    "DESCRIPTION:"+icsEsc(cn(e.date)+(slotOf(e)==="noon"?" 中午":" 晚上")+" 的局；"+evDesc(e)),
+    "BEGIN:VALARM","ACTION:DISPLAY","TRIGGER:PT0S",
+    "DESCRIPTION:"+icsEsc(remindTitle(e)),"END:VALARM","END:VEVENT"].join("\r\n");
 }
 function downloadICS(list,fname){
   if(!list.length){toast("没有可导出的计划");return;}
-  var body=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Crosslink//CN","CALSCALE:GREGORIAN"]
-    .concat(list.map(icsEvent)).concat(["END:VCALENDAR"]).join("\r\n");
+  var blocks=[];
+  list.forEach(function(e){
+    blocks.push(icsEvent(e));
+    if(db.settings.remindEvent!==false&&remindAt(e).getTime()>Date.now()-86400000)
+      blocks.push(icsRemind(e));
+  });
+  var body=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Crosslink//CN","CALSCALE:GREGORIAN","METHOD:PUBLISH"]
+    .concat(VTZ).concat(blocks).concat(["END:VCALENDAR"]).join("\r\n");
   var blob=new Blob([body],{type:"text/calendar;charset=utf-8"});
   var a=document.createElement("a");
   a.href=URL.createObjectURL(blob);a.download=fname;
@@ -948,7 +990,7 @@ function gcalOpen(e){
   var t=evTimes(e);
   var u="https://calendar.google.com/calendar/render?action=TEMPLATE"+
     "&text="+encodeURIComponent(evTitle(e))+
-    "&dates="+stampLocal(t.s)+"/"+stampLocal(t.e)+
+    "&dates="+utcStamp(t.s)+"/"+utcStamp(t.e)+
     "&location="+encodeURIComponent(e.place||"")+
     "&details="+encodeURIComponent(evDesc(e))+
     "&ctz=Asia/Shanghai";
@@ -985,11 +1027,14 @@ function sheetSettings(){
      "<button class='btn sm' data-act='addTier'>加一档</button></div>";
   b+="<h2 class='sec'>手机日历</h2>"+
      "<div class='row' style='flex-wrap:nowrap;align-items:center'><span class='sub' style='flex:none'>提前</span>"+
-     "<input type='number' id='remDays' value='"+(db.settings.remindDays||5)+"' style='max-width:80px'>"+
-     "<span class='sub' style='flex:none'>天提醒</span>"+
+     "<input type='number' id='remDays' value='"+(db.settings.remindDays||3)+"' style='max-width:80px'>"+
+     "<span class='sub' style='flex:none'>天的中午 12 点提醒</span>"+
      "<button class='btn sm' data-act='saveRem'>保存</button></div>"+
+     "<div class='typerow' style='margin-top:10px'><span>额外生成一条「订位」提醒日程</span>"+
+     "<button class='btn sm' data-act='toggleRemEv'>"+(db.settings.remindEvent!==false?"开":"关")+"</button></div>"+
+     "<div class='sub'>安卓日历常常忽略 .ics 里的提醒设置，多导一条 12:00 的日程最稳。</div>"+
      "<div class='row' style='margin-top:10px'><button class='btn' data-act='icsAll'>导出全部未完成计划</button></div>"+
-     "<div class='sub' style='margin-top:8px'>安卓：下载后用「日历」或「文件」打开 .ics，选导入即可，提醒会一起带过去。</div>";
+     "<div class='sub' style='margin-top:8px'>下载后用「日历」或「文件」打开 .ics 导入。时区已固定为北京时间。</div>";
   b+="<h2 class='sec'>应酬形式<small>"+types().length+" 项</small></h2>";
   types().forEach(function(x,i){
     b+="<div class='typerow'><span>"+esc(x)+"</span>"+
@@ -1027,7 +1072,7 @@ function sheetSettings(){
           db.settings.cycle=db.settings.cycle||"quarter";
           if(!db.settings.types||!db.settings.types.length)db.settings.types=DEF_TYPES.slice();
           if(!db.settings.tiers||!db.settings.tiers.length)db.settings.tiers=JSON.parse(JSON.stringify(DEF_TIERS));
-          if(!db.settings.remindDays)db.settings.remindDays=5;
+          if(!db.settings.remindDays)db.settings.remindDays=3;
           db.events.forEach(function(e){e.photos=e.photos||[];});
           save();closeSheet();render();toast("已导入");
         }catch(e){toast("这个文件读不出来，确认是本应用导出的 JSON");}
@@ -1109,6 +1154,10 @@ document.addEventListener("click",function(ev){
     });
     if(!ok){toast("名称和天数都要填");return;}
     save();sheetSettings();render();toast("分级已更新");
+  }
+  else if(a==="toggleRemEv"){
+    db.settings.remindEvent=db.settings.remindEvent===false;
+    save();sheetSettings();
   }
   else if(a==="saveRem"){
     var rv=parseInt(val("remDays"),10);
