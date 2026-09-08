@@ -109,6 +109,7 @@ h2.sec small{font-family:var(--mono);font-size:11px;font-weight:400;letter-spaci
 .pill{font-family:var(--mono);font-size:10px;border:1px solid var(--brass);color:var(--brass);border-radius:2px;padding:1px 4px;letter-spacing:.08em}
 .pill.g{border-color:var(--dim2);color:var(--dim2)}
 .pill.b{border-color:rgba(120,170,220,.7);color:#8FB6DE}
+.auto{font-family:var(--mono);font-size:10px;color:var(--dim2);letter-spacing:.06em}
 .pin{color:var(--accent2);font-size:11px;flex:none}
 .tierrow{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line2)}
 .tierrow input{width:auto;flex:1;min-width:0}
@@ -309,6 +310,14 @@ function save(){
   }
 }
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+/* 过了日子还没删的计划，默认算已应酬；标 auto 以便区分，标 noshow 的不动 */
+function autoComplete(d){
+  var t=today(),changed=false;
+  (d&&d.events||[]).forEach(function(e){
+    if(!e.done&&!e.noshow&&e.date<t){e.done=true;e.auto=true;changed=true;}
+  });
+  return changed;
+}
 
 function pad(n){return n<10?"0"+n:""+n;}
 function iso(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());}
@@ -410,6 +419,7 @@ function renderHeader(){
   document.getElementById("meterBar").style.width=(act.length?Math.round(seen/act.length*100):0)+"%";
 }
 function render(){
+  if(autoComplete(db))save();
   var y=window.scrollY;
   renderHeader();
   var v=document.getElementById("view");
@@ -466,7 +476,7 @@ function calendarBlock(){
 }
 function slotOf(e){return e.slot==="noon"?"noon":"night";}
 function slotState(evs,slot){
-  var l=evs.filter(function(e){return slotOf(e)===slot;});
+  var l=evs.filter(function(e){return slotOf(e)===slot&&!e.noshow;});
   if(!l.length)return "";
   if(l.some(function(e){return !e.done&&!e.place;}))return "s-need";
   if(l.some(function(e){return !e.done&&e.place;}))return "s-set";
@@ -480,8 +490,9 @@ function evCard(e,showDate){
     "<span class='pl'>"+(slotOf(e)==="noon"?"中午":"晚上")+"</span>"+
     "<span class='ty'>"+esc(e.type||"应酬")+"</span>"+
     (e.place?"<span class='pl'>"+esc(e.place)+"</span>":"")+
-    "<span class='pill"+(e.done?" g":(e.place?" b":""))+"'>"+
-      (e.done?"已完成":(e.place?"已订地点":"待订地点"))+"</span></div>"+
+    "<span class='pill"+(e.noshow?" g":(e.done?" g":(e.place?" b":"")))+"'>"+
+      (e.noshow?"未发生":(e.done?"已完成":(e.place?"已订地点":"待订地点")))+"</span>"+
+    (e.auto&&e.done?"<span class='auto'>自动</span>":"")+"</div>"+
     "<div class='who'>"+esc(names||"未选人")+"</div>"+
     (e.topic?"<div class='txt'>"+esc(e.topic)+"</div>":"")+
     (e.followup?"<div class='txt'>跟进："+esc(e.followup)+"</div>":"");
@@ -879,13 +890,18 @@ function sheetEvent(id,preDate,preTrader,planned){
       "<div id='photoStrip'>"+thumbHTML()+"</div>"+
       "<div class='hint'>压缩后存，只留在这台设备上</div></div>"+
     "<div class='field'><label>STATUS 状态</label><div class='seg' id='f_seg' style='margin-bottom:0'>"+
-      "<button type='button' data-v='1' class='"+(e.done?"on":"")+"'>已完成</button>"+
-      "<button type='button' data-v='0' class='"+(e.done?"":"on")+"'>计划中</button></div></div>"+
+      "<button type='button' data-v='1' class='"+(e.done&&!e.noshow?"on":"")+"'>已完成</button>"+
+      "<button type='button' data-v='0' class='"+(e.done&&!e.noshow?"":"on")+"'>"+
+        (e.noshow?"未发生":"计划中")+"</button></div>"+
+      "<div class='hint'>"+(e.auto?"这条是过期后自动记成已完成的，补上聊了什么会更有用。":
+        "日子过了还没删的计划会自动记成已完成。没去成的话在下面标一下。")+"</div></div>"+
     "<button class='btn pri wide' data-act='saveEvent' data-id='"+(id||"")+"'>确定</button>"+
     (id&&!e.done?"<div class='row' style='margin-top:9px;flex-wrap:nowrap'>"+
       "<button class='btn' style='flex:1' data-act='ics' data-id='"+id+"'>下载 .ics</button>"+
       "<button class='btn' style='flex:1' data-act='gcal' data-id='"+id+"'>加到 Google 日历</button></div>"+
       "<div class='hint'>.ics 会带一条提前 "+(db.settings.remindDays||3)+" 天、中午 12 点的提醒；Google 链接更快但只有默认提醒</div>":"")+
+    (id&&e.date<today()&&e.done?"<button class='btn wide' style='margin-top:9px' data-act='noshow' data-id='"+id+"'>标为没去成，不计入</button>":"")+
+    (id&&e.noshow?"<button class='btn wide' style='margin-top:9px' data-act='unshow' data-id='"+id+"'>撤销，改回已完成</button>":"")+
     (id?"<button class='btn danger wide' style='margin-top:9px' data-act='delEvent' data-id='"+id+"'>删除这条记录</button>":"");
   openSheet(id?"编辑记录":(planned?"新计划":"记一次应酬"),b,function(root){
     root.querySelector("#f_slot").addEventListener("click",function(ev){
@@ -1258,10 +1274,22 @@ document.addEventListener("click",function(ev){
     obj.traderIds=picks;obj.topic=val("f_topic");obj.followup=val("f_follow");
     obj.photos=pending.slice();
     obj.done=seg?seg.dataset.v==="1":true;
+    obj.auto=false;
+    if(!obj.done&&obj.date<today())obj.noshow=true;else delete obj.noshow;
     if(!id)db.events.push(obj);
     calSel=obj.date;
     if(save())toast(obj.done?"已记下 "+picks.length+" 人":"已加入计划");
     closeSheet();render();
+  }
+  else if(a==="noshow"){
+    var en0=event_(id);
+    if(en0){en0.done=false;en0.noshow=true;en0.auto=false;save();}
+    closeSheet();render();toast("已标为没去成，灯不会亮");
+  }
+  else if(a==="unshow"){
+    var en1=event_(id);
+    if(en1){en1.done=true;delete en1.noshow;en1.auto=false;save();}
+    closeSheet();render();toast("已改回已完成");
   }
   else if(a==="delEvent"){
     db.events=db.events.filter(function(x){return x.id!==id;});
@@ -1380,6 +1408,7 @@ document.getElementById("view").addEventListener("toggle",function(ev){
 document.addEventListener("keydown",function(e){if(e.key==="Escape")closeSheet();});
 
 db=load();
+if(autoComplete(db))save();
 render();
 </script>
 </body>
