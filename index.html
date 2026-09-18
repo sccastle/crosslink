@@ -215,7 +215,8 @@ dl.kv dd{margin:0;word-break:break-word}
 .blank{border:1px dashed var(--line);border-radius:4px;padding:18px 15px;color:var(--dim);font-size:13.5px}
 .bar{height:3px;background:var(--ink3);border-radius:2px;overflow:hidden;margin-top:6px}
 .bar>i{display:block;height:100%;background:var(--brass)}
-.note{display:flex;align-items:flex-start;gap:9px;padding:10px 0;border-top:1px solid var(--line2)}
+.note{display:flex;align-items:flex-start;gap:9px;padding:11px 0;border-top:1px solid var(--line2);cursor:pointer}
+.note:active{background:var(--ink3)}
 .note .tag{font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--accent2);
   border:1px solid rgba(155,138,216,.45);border-radius:2px;padding:1px 5px;flex:none;margin-top:2px}
 .note .ntx{flex:1;min-width:0;font-size:13.5px;white-space:pre-wrap;word-break:break-word}
@@ -265,6 +266,7 @@ dl.kv dd{margin:0;word-break:break-word}
 <nav class="tabs">
   <button data-tab="clients" class="on"><span class="ic">▤</span>客户</button>
   <button data-tab="board"><span class="ic">◍</span>轮次</button>
+  <button data-tab="events"><span class="ic">◷</span>应酬</button>
   <button data-tab="weekly"><span class="ic">✎</span>周报</button>
 </nav>
 
@@ -425,6 +427,7 @@ function render(){
   var v=document.getElementById("view");
   if(tab==="clients")v.innerHTML=viewClients();
   else if(tab==="board")v.innerHTML=viewBoard();
+  else if(tab==="events")v.innerHTML=viewEvents();
   else v.innerHTML=viewWeekly();
   Array.prototype.forEach.call(document.querySelectorAll("nav.tabs button"),function(b){
     b.classList.toggle("on",b.dataset.tab===tab);});
@@ -667,73 +670,56 @@ function eventsIn(s0,e0){
 }
 function viewWeekly(){
   var w=weekBounds();
-  var evs=eventsIn(w.s,w.e);
   var nts=notesIn(w.s,w.e);
-  var people={};
-  evs.forEach(function(x){x.traderIds.forEach(function(id){people[id]=1;});});
+  var byMod={};
+  MODS.forEach(function(m){byMod[m]=notesIn(w.s,w.e,m).length;});
   var h="<div class='calhead' style='padding-bottom:14px'>"+
     "<button class='btn sm' data-act='wk' data-d='-1'>‹</button>"+
     "<b>"+md(w.s)+" – "+md(w.e)+(wkOff?"":"　本周")+"</b>"+
     "<button class='btn sm' data-act='wk' data-d='1'>›</button></div>";
-  h+="<div class='row' style='gap:26px;margin-bottom:14px'>"+
-     "<div><div class='sub'>素材</div><div class='num' style='font-size:24px'>"+nts.length+"</div></div>"+
-     "<div><div class='sub'>场次</div><div class='num' style='font-size:24px'>"+evs.length+"</div></div>"+
-     "<div><div class='sub'>见到的人</div><div class='num' style='font-size:24px'>"+Object.keys(people).length+"</div></div>"+
-     "</div>";
+  h+="<div class='row' style='gap:22px;margin-bottom:14px'>"+
+     MODS.map(function(m){
+       return "<div><div class='sub'>"+m+"</div><div class='num' style='font-size:22px'>"+byMod[m]+"</div></div>";
+     }).join("")+"</div>";
   var mon=mondayOf(wkOff);
   for(var i=0;i<5;i++){
     var d=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+i);
     var ds=iso(d);
-    var dn=notesOn(ds), de=db.events.filter(function(x){return x.done&&x.date===ds;});
+    var dn=notesOn(ds);
     var isToday=ds===today();
     var open=openDays[ds]!==undefined?openDays[ds]:isToday;
     h+="<details class='fold day-fold' data-day='"+ds+"'"+(open?" open":"")+">";
     h+="<summary><span class='lbl'><span class='caret'>▶</span>"+DAYN[i]+
        "<span class='meta' style='margin-left:6px'>"+md(ds)+"</span></span>"+
-       "<span class='meta'>"+(dn.length+de.length?dn.length+" 条 · "+de.length+" 场":"空")+
+       "<span class='meta'>"+(dn.length?dn.length+" 条":"空")+
        (isToday?" · 今天":"")+"</span></summary><div class='foldbody'>";
-    de.forEach(function(e){h+=evCard(e);});
     dn.forEach(function(n){
-      h+="<div class='note' data-nid='"+n.id+"' data-nd='"+n.date+"'><span class='tag'>"+esc(n.mod)+"</span>"+
+      h+="<div class='note' data-act='editNote' data-id='"+n.id+"' data-nd='"+n.date+"'>"+
+         "<span class='tag'>"+esc(n.mod)+"</span>"+
          "<span class='ntx'>"+esc(n.text)+"</span>"+
          "<button class='btn sm danger' data-act='delNote' data-id='"+n.id+"'>删</button></div>";
     });
-    if(!dn.length&&!de.length)h+="<div class='sub'>这天还没记东西。</div>";
-    else if(dn.length)h+="<div class='sub' style='margin-top:7px'>长按某条可以改</div>";
+    if(!dn.length)h+="<div class='sub'>这天还没记东西。</div>";
+    else h+="<div class='sub' style='margin-top:7px'>点某条可以改</div>";
     h+="<div class='row' style='margin-top:10px'><button class='btn sm' data-act='addNote' data-d='"+ds+"'>记一条</button></div>";
     h+="</div></details>";
   }
   h+="<h2 class='sec'>草稿<small>按四个模块归位</small></h2>";
   h+="<div class='row'><button class='btn pri' data-act='draft'>生成周报草稿</button></div>";
-  h+="<div class='blank' style='margin-top:12px'>草稿只做归位和罗列，不替你下判断。生成后粘给 Claude，让它写成你同事那种口吻的成文。</div>";
+  h+="<div class='blank' style='margin-top:12px'>草稿只归位和罗列这四块的记录，不替你下判断。应酬明细在「应酬」页按日期查。</div>";
   return h;
 }
 function weekText(){
   var w=weekBounds();
-  var out=[];
+  var out=[md(w.s)+"–"+md(w.e)+" 周报素材",""];
   MODS.forEach(function(m){
-    var lines=[];
-    if(m==="客户"){
-      eventsIn(w.s,w.e).forEach(function(x){
-        var names=x.traderIds.map(function(id){
-          var t=trader(id);return t?bankName(t.bankId)+" "+t.name:"";}).filter(Boolean).join("、");
-        lines.push(md(x.date)+" "+(x.type||"应酬")+(x.place?"（"+x.place+"）":"")+"："+names+
-          (x.topic?"。"+x.topic:"")+(x.followup?" 跟进："+x.followup:""));
-      });
-    }
-    notesIn(w.s,w.e,m).forEach(function(n){lines.push(md(n.date)+" "+n.text);});
+    var l=notesIn(w.s,w.e,m);
     out.push("【"+m+"】");
-    out.push(lines.length?lines.map(function(x){return "· "+x;}).join("\n"):"· （空）");
+    out.push(l.length?l.map(function(x){return "· "+md(x.date)+" "+x.text;}).join("\n"):"· （空）");
   });
-  var od=db.traders.filter(function(t){return t.status==="active"&&isOverdue(t);});
-  if(od.length)out.push("【待覆盖】\n· "+od.slice(0,12).map(function(t){return bankName(t.bankId)+" "+t.name;}).join("、"));
-  var up=db.events.filter(function(x){return !x.done&&x.date>=today();})
-    .sort(function(a,b){return a.date<b.date?-1:1;}).slice(0,8);
-  if(up.length)out.push("【下周计划】\n· "+up.map(function(x){
-    return md(x.date)+" "+x.traderIds.map(function(id){var t=trader(id);return t?t.name:"";}).filter(Boolean).join("、");
-  }).join("；"));
-  return md(w.s)+"–"+md(w.e)+" 周报素材\n\n"+out.join("\n");
+  return out.join("\n");
 }
+
 function sheetNote(ds,id){
   var n=id?db.notes.filter(function(x){return x.id===id;})[0]:{mod:"市场",text:"",date:ds};
   var b="<div class='field'><label>MODULE 归到哪块</label><div class='seg' id='n_mod' style='margin-bottom:0'>"+
@@ -750,6 +736,88 @@ function sheetNote(ds,id){
     });
     root.querySelector("#n_text").focus();
   });
+}
+
+/* ---------- 应酬明细 ---------- */
+var rgFrom="", rgTo="", rgQ="";
+function monthStart(off){
+  var n=new Date(),d=new Date(n.getFullYear(),n.getMonth()+(off||0),1);
+  return iso(d);
+}
+function monthEnd(off){
+  var n=new Date(),d=new Date(n.getFullYear(),n.getMonth()+(off||0)+1,0);
+  return iso(d);
+}
+function ensureRange(){
+  if(!rgFrom)rgFrom=monthStart(0);
+  if(!rgTo)rgTo=monthEnd(0);
+}
+function viewEvents(){
+  ensureRange();
+  var list=db.events.filter(function(e){
+    if(e.date<rgFrom||e.date>rgTo)return false;
+    if(!rgQ)return true;
+    var hay=(e.type||"")+" "+(e.place||"")+" "+(e.topic||"")+" "+(e.followup||"")+" "+
+      e.traderIds.map(function(id){var t=trader(id);return t?t.name+" "+bankName(t.bankId):"";}).join(" ");
+    return matches(hay,rgQ);
+  }).sort(function(a,b){return a.date<b.date?1:-1;});
+
+  var people={},banks={},done=0;
+  list.forEach(function(e){
+    if(e.done)done++;
+    e.traderIds.forEach(function(id){
+      var t=trader(id);
+      if(t){people[id]=1;banks[t.bankId]=1;}
+    });
+  });
+
+  var h="<h2 class=\'sec\'>应酬明细<small>"+md(rgFrom)+" – "+md(rgTo)+"</small></h2>";
+  h+="<div class=\'row\' style=\'flex-wrap:nowrap;align-items:center;gap:6px\'>"+
+     "<input type=\'date\' id=\'r_from\' value=\'"+rgFrom+"\'>"+
+     "<span class=\'sub\' style=\'flex:none\'>至</span>"+
+     "<input type=\'date\' id=\'r_to\' value=\'"+rgTo+"\'></div>";
+  h+="<div class=\'row\' style=\'margin-top:8px\'>"+
+     "<button class=\'btn sm\' data-act=\'rgPreset\' data-p=\'m0\'>本月</button>"+
+     "<button class=\'btn sm\' data-act=\'rgPreset\' data-p=\'m1\'>上月</button>"+
+     "<button class=\'btn sm\' data-act=\'rgPreset\' data-p=\'q\'>本季</button>"+
+     "<button class=\'btn sm\' data-act=\'rgPreset\' data-p=\'y\'>今年</button>"+
+     "<button class=\'btn sm\' data-act=\'rgPreset\' data-p=\'all\'>全部</button></div>";
+  h+="<div class=\'field\' style=\'margin-top:10px\'><input id=\'r_q\' placeholder=\'筛人名、银行、地点，可打拼音首字母\' value=\'"+esc(rgQ)+"\'></div>";
+  h+="<div class=\'row\'><button class=\'btn pri\' data-act=\'rgGo\'>查询</button>"+
+     "<button class=\'btn\' data-act=\'rgCopy\'>复制明细</button></div>";
+
+  h+="<div class=\'row\' style=\'gap:22px;margin:16px 0 10px\'>"+
+     "<div><div class=\'sub\'>场次</div><div class=\'num\' style=\'font-size:22px\'>"+list.length+"</div></div>"+
+     "<div><div class=\'sub\'>已完成</div><div class=\'num\' style=\'font-size:22px\'>"+done+"</div></div>"+
+     "<div><div class=\'sub\'>人数</div><div class=\'num\' style=\'font-size:22px\'>"+Object.keys(people).length+"</div></div>"+
+     "<div><div class=\'sub\'>机构</div><div class=\'num\' style=\'font-size:22px\'>"+Object.keys(banks).length+"</div></div>"+
+     "</div>";
+
+  if(!list.length)h+="<div class=\'empty\'><p>这段时间没有记录。</p></div>";
+  else{
+    var curM="";
+    list.forEach(function(e){
+      var mk=e.date.slice(0,7);
+      if(mk!==curM){curM=mk;h+="<div class=\'gh\'>"+mk.replace("-"," / ")+"</div>";}
+      h+=evCard(e,true);
+    });
+  }
+  return h;
+}
+function rangeText(){
+  ensureRange();
+  var list=db.events.filter(function(e){return e.date>=rgFrom&&e.date<=rgTo;})
+    .sort(function(a,b){return a.date<b.date?-1:1;});
+  var out=[md(rgFrom)+"–"+md(rgTo)+" 应酬明细（"+list.length+" 场）",""];
+  list.forEach(function(e){
+    var names=e.traderIds.map(function(id){
+      var t=trader(id);return t?bankName(t.bankId)+" "+t.name:"";}).filter(Boolean).join("、");
+    out.push("· "+md(e.date)+" "+(slotOf(e)==="noon"?"中午":"晚上")+" "+(e.type||"应酬")+
+      (e.place?"（"+e.place+"）":"")+"："+names+
+      (e.topic?"。"+e.topic:"")+(e.followup?" 跟进："+e.followup:"")+
+      (e.noshow?"（未发生）":(e.done?"":"（未完成）")));
+  });
+  return out.join("\n");
 }
 
 /* ---------- sheet ---------- */
@@ -1297,8 +1365,29 @@ document.addEventListener("click",function(ev){
   }
   else if(a==="mv"){calMonth.setMonth(calMonth.getMonth()+(+el.dataset.d));calOpen=true;render();}
   else if(a==="pick"){calSel=el.dataset.d;calOpen=true;render();}
+  else if(a==="rgGo"){
+    rgFrom=val("r_from")||rgFrom;rgTo=val("r_to")||rgTo;rgQ=val("r_q");
+    if(rgFrom>rgTo){var tmp=rgFrom;rgFrom=rgTo;rgTo=tmp;}
+    render();
+  }
+  else if(a==="rgPreset"){
+    var pset=el.dataset.p;
+    if(pset==="m0"){rgFrom=monthStart(0);rgTo=monthEnd(0);}
+    else if(pset==="m1"){rgFrom=monthStart(-1);rgTo=monthEnd(-1);}
+    else if(pset==="q"){var c0=cycleRange();rgFrom=c0.s;rgTo=c0.e;}
+    else if(pset==="y"){var yy=new Date().getFullYear();rgFrom=yy+"-01-01";rgTo=yy+"-12-31";}
+    else{rgFrom="1970-01-01";rgTo="2099-12-31";}
+    render();
+  }
+  else if(a==="rgCopy"){
+    var rt=rangeText();
+    if(navigator.clipboard&&navigator.clipboard.writeText)
+      navigator.clipboard.writeText(rt).then(function(){toast("已复制");},function(){fallbackCopy(rt);});
+    else fallbackCopy(rt);
+  }
   else if(a==="wk"){wkOff+=(+el.dataset.d);openDays={};render();}
   else if(a==="addNote")sheetNote(el.dataset.d);
+  else if(a==="editNote")sheetNote(el.dataset.nd,id);
   else if(a==="saveNote"){
     var tx=val("n_text");
     if(!tx){toast("写点东西");return;}
@@ -1375,8 +1464,6 @@ document.getElementById("view").addEventListener("toggle",function(ev){
   function targetAt(el){
     var sum=el.closest("details.bank>summary");
     if(sum)return function(){sheetBank(sum.parentNode.dataset.bank);};
-    var nt=el.closest(".note");
-    if(nt&&!el.closest("[data-act]"))return function(){sheetNote(nt.dataset.nd,nt.dataset.nid);};
     return null;
   }
   view.addEventListener("pointerdown",function(ev){
