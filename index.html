@@ -113,6 +113,11 @@ h2.sec small{font-family:var(--mono);font-size:11px;font-weight:400;letter-spaci
 .pill.g{border-color:var(--dim2);color:var(--dim2)}
 .pill.b{border-color:rgba(120,170,220,.7);color:#8FB6DE}
 .auto{font-family:var(--mono);font-size:10px;color:var(--dim2);letter-spacing:.06em}
+.wtag{font-family:var(--mono);font-size:9.5px;color:var(--brass);border:1px solid rgba(155,138,216,.5);
+  border-radius:2px;padding:0 4px;margin-left:6px;letter-spacing:.08em}
+.trow.wide{color:var(--dim)}
+.trow.wide .tname{color:var(--paper)}
+.wico{width:9px;height:9px;flex:none;border:1px solid var(--brass);border-radius:1px}
 .pin{color:var(--accent2);font-size:11px;flex:none}
 .tierrow{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line2)}
 .tierrow input{width:auto;flex:1;min-width:0}
@@ -281,7 +286,7 @@ dl.kv dd{margin:0;word-break:break-word}
 
 var KEY="fx_client_ledger_v1";
 var storeOK=true, db=null;
-var DEF_TYPES=["饭局","酒局","咖啡","高尔夫","运动","拜访","礼赠","其他"];
+var DEF_TYPES=["饭局","酒局","咖啡","茶歇","高尔夫","运动","拜访","礼赠","其他"];
 
 var DEF_TIERS=[{k:"A",d:30},{k:"B",d:60},{k:"C",d:90}];
 function blank(){return{v:5,settings:{cycle:"quarter",types:DEF_TYPES.slice(),tiers:JSON.parse(JSON.stringify(DEF_TIERS)),remindDays:3},banks:[],traders:[],events:[],notes:[]};}
@@ -293,7 +298,10 @@ function load(){
     d.settings=d.settings||{};
     d.settings.cycle=d.settings.cycle||"quarter";
     if(!d.settings.types||!d.settings.types.length)d.settings.types=DEF_TYPES.slice();
-    if(d.settings.types.indexOf("礼赠")<0)d.settings.types.splice(Math.max(0,d.settings.types.length-1),0,"礼赠");
+    ["礼赠","茶歇"].forEach(function(x){
+      if(d.settings.types.indexOf(x)<0)d.settings.types.splice(Math.max(0,d.settings.types.length-1),0,x);
+    });
+    d.events.forEach(function(e){e.traderIds=e.traderIds||[];e.bankIds=e.bankIds||[];});
     if(!d.settings.tiers||!d.settings.tiers.length)d.settings.tiers=JSON.parse(JSON.stringify(DEF_TIERS));
     if(!d.settings.remindDays)d.settings.remindDays=3;
     d.banks=d.banks||[];d.traders=d.traders||[];d.events=d.events||[];d.notes=d.notes||[];
@@ -483,6 +491,20 @@ function calendarBlock(){
      "<button class='btn sm' data-act='addEventOn' data-d='"+calSel+"'>记应酬</button></div>";
   return h+"</div></details>";
 }
+function isWide(e){return !!(e.bankIds&&e.bankIds.length);}
+function evNames(e){
+  if(isWide(e))return e.bankIds.map(bankName).join("、");
+  return e.traderIds.map(function(id){
+    var t=trader(id);return t?t.name+"（"+bankName(t.bankId)+"）":"?";}).join(" ");
+}
+function wideOf(bid){
+  return db.events.filter(function(e){return isWide(e)&&e.bankIds.indexOf(bid)>=0;})
+    .sort(function(a,b){return a.date<b.date?1:-1;});
+}
+function wideThisCycle(bid){
+  var c=cycleRange();
+  return wideOf(bid).filter(function(e){return e.done&&e.date>=c.s&&e.date<=c.e;}).length;
+}
 function slotOf(e){return e.slot==="noon"?"noon":(e.slot==="other"?"other":"night");}
 function slotLabel(e){var x=slotOf(e);return x==="noon"?"中午":(x==="night"?"晚上":"");}
 function otherMark(evs){
@@ -498,8 +520,7 @@ function slotState(evs,slot){
   return "s-done";
 }
 function evCard(e,showDate){
-  var names=e.traderIds.map(function(id){
-    var t=trader(id);return t?t.name+"（"+bankName(t.bankId)+"）":"?";}).join(" ");
+  var names=evNames(e);
   var h="<div class='det' data-act='event' data-id='"+e.id+"'><div class='top'>"+
     (showDate?"<span class='pl'>"+md(e.date)+"</span>":"")+
     (slotLabel(e)?"<span class='pl'>"+slotLabel(e)+"</span>":"")+
@@ -508,7 +529,7 @@ function evCard(e,showDate){
     "<span class='pill"+(e.noshow||e.done?" g":(slotOf(e)==="other"?"":(e.place?" b":"")))+"'>"+
       (e.noshow?"未发生":(e.done?"已完成":(slotOf(e)==="other"?"计划":(e.place?"已订地点":"待订地点"))))+"</span>"+
     (e.auto&&e.done?"<span class='auto'>自动</span>":"")+"</div>"+
-    "<div class='who'>"+esc(names||"未选人")+"</div>"+
+    "<div class='who'>"+esc(names||"未选人")+(isWide(e)?"<span class='wtag'>全行</span>":"")+"</div>"+
     (e.topic?"<div class='txt'>"+esc(e.topic)+"</div>":"")+
     (e.followup?"<div class='txt'>跟进："+esc(e.followup)+"</div>":"");
   if(e.photos&&e.photos.length){
@@ -605,6 +626,10 @@ function clientBlock(){
       h+="<summary><span class='caret'>▶</span>"+(b.pinned?"<span class='pin'>★</span>":"")+
          "<span class='bname'>"+esc(b.name)+"</span>"+
          "<span class='cnt'>"+seen+" / "+ts.length+"</span></summary><div>";
+      var wc=wideThisCycle(b.id),wa=wideOf(b.id).length;
+      h+="<button class='trow wide' data-act='wideBank' data-id='"+b.id+"'>"+
+         "<span class='wico'></span><span class='tname'>全部（全行）</span>"+
+         "<span class='ago'>"+(wa?("本轮 "+wc+" 次 / 共 "+wa):"未记录")+"</span></button>";
       if(!shown.length)h+="<div style='padding:11px 0 4px 14px' class='sub'>本行还没有交易员</div>";
       shown.forEach(function(t){h+=traderRow(t,false);});
       h+="<div class='row' style='padding:9px 0 13px 14px'>"+
@@ -771,7 +796,8 @@ function viewEvents(){
     if(rgType&&(e.type||"")!==rgType)return false;
     if(!rgQ)return true;
     var hay=(e.type||"")+" "+(e.place||"")+" "+(e.topic||"")+" "+(e.followup||"")+" "+
-      e.traderIds.map(function(id){var t=trader(id);return t?t.name+" "+bankName(t.bankId):"";}).join(" ");
+      e.traderIds.map(function(id){var t=trader(id);return t?t.name+" "+bankName(t.bankId):"";}).join(" ")+" "+
+      (e.bankIds||[]).map(bankName).join(" ");
     return matches(hay,rgQ);
   }).sort(function(a,b){return a.date<b.date?1:-1;});
 
@@ -782,6 +808,7 @@ function viewEvents(){
       var t=trader(id);
       if(t){people[id]=1;banks[t.bankId]=1;}
     });
+    (e.bankIds||[]).forEach(function(bid){banks[bid]=1;});
   });
 
   var h="<h2 class=\'sec\'>应酬明细<small>"+md(rgFrom)+" – "+md(rgTo)+"</small></h2>";
@@ -835,8 +862,9 @@ function rangeText(){
     .sort(function(a,b){return a.date<b.date?-1:1;});
   var out=[md(rgFrom)+"–"+md(rgTo)+(rgType?" "+rgType:"")+" 明细（"+list.length+" 场）",""];
   list.forEach(function(e){
-    var names=e.traderIds.map(function(id){
-      var t=trader(id);return t?bankName(t.bankId)+" "+t.name:"";}).filter(Boolean).join("、");
+    var names=isWide(e)?e.bankIds.map(function(id){return bankName(id)+" 全行";}).join("、"):
+      e.traderIds.map(function(id){
+        var t=trader(id);return t?bankName(t.bankId)+" "+t.name:"";}).filter(Boolean).join("、");
     out.push("· "+md(e.date)+(slotLabel(e)?" "+slotLabel(e):"")+" "+(e.type||"应酬")+
       (e.place?"（"+e.place+"）":"")+"："+names+
       (e.topic?"。"+e.topic:"")+(e.followup?" 跟进："+e.followup:"")+
@@ -947,36 +975,50 @@ function typeOptions(cur){
   if(cur&&list.indexOf(cur)<0)list.unshift(cur);
   return list.map(function(x){return "<option"+(x===cur?" selected":"")+">"+esc(x)+"</option>";}).join("");
 }
-function sheetEvent(id,preDate,preTrader,planned){
+function sheetEvent(id,preDate,preTrader,planned,preBank){
   var e=id?event_(id):null;
-  if(!e)e={date:preDate||today(),slot:"night",type:types()[0],place:"",traderIds:preTrader?[preTrader]:[],topic:"",followup:"",photos:[],done:!planned};
+  if(!e)e={date:preDate||today(),slot:preBank?"other":"night",
+    type:preBank?(types().indexOf("茶歇")>=0?"茶歇":types()[0]):types()[0],
+    place:"",traderIds:preTrader?[preTrader]:[],bankIds:preBank?[preBank]:[],
+    topic:"",followup:"",photos:[],done:!planned};
+  var wide=isWide(e);
   pending=(e.photos||[]).slice();
   var picker="";
-  db.banks.forEach(function(bk){
-    activeOf(bk.id).sort(sortName).forEach(function(t){
-      var on=e.traderIds.indexOf(t.id)>=0;
-      picker+="<label class='pk'><input type='checkbox' class='pick' value='"+t.id+"'"+(on?" checked":"")+">"+
-        "<span>"+esc(t.name)+"</span><span class='pkb'>"+esc(bk.name)+"</span></label>";
+  if(wide){
+    sortedBanks().forEach(function(bk){
+      var on=e.bankIds.indexOf(bk.id)>=0;
+      picker+="<label class='pk'><input type='checkbox' class='bpick' value='"+bk.id+"'"+(on?" checked":"")+">"+
+        "<span>"+esc(bk.name)+"</span><span class='pkb'>"+activeOf(bk.id).length+" 人</span></label>";
     });
-  });
-  if(!picker)picker="<div style='padding:12px' class='sub'>先添加交易员</div>";
+    if(!picker)picker="<div style='padding:12px' class='sub'>先添加银行</div>";
+  }else{
+    db.banks.forEach(function(bk){
+      activeOf(bk.id).sort(sortName).forEach(function(t){
+        var on=e.traderIds.indexOf(t.id)>=0;
+        picker+="<label class='pk'><input type='checkbox' class='pick' value='"+t.id+"'"+(on?" checked":"")+">"+
+          "<span>"+esc(t.name)+"</span><span class='pkb'>"+esc(bk.name)+"</span></label>";
+      });
+    });
+    if(!picker)picker="<div style='padding:12px' class='sub'>先添加交易员</div>";
+  }
   var b="<div class='field'><label>DATE 日期</label><input id='f_date' type='date' value='"+esc(e.date)+"'></div>"+
-    "<div class='field'><label>SLOT 时段</label><div class='seg' id='f_slot' style='margin-bottom:0'>"+
+    (wide?"":"<div class='field'><label>SLOT 时段</label><div class='seg' id='f_slot' style='margin-bottom:0'>"+
       "<button type='button' data-s='noon' class='"+(slotOf(e)==="noon"?"on":"")+"'>中午</button>"+
       "<button type='button' data-s='night' class='"+(slotOf(e)==="night"?"on":"")+"'>晚上</button>"+
       "<button type='button' data-s='other' class='"+(slotOf(e)==="other"?"on":"")+"'>其他</button>"+
-      "</div><div class='hint'>中午占日历上半格，晚上占下半格；其他（送礼、问候之类）只在格子右上角打一个点，不用填地点</div></div>"+
+      "</div><div class='hint'>中午占日历上半格，晚上占下半格；其他（送礼、问候之类）只在格子右上角打一个点，不用填地点</div></div>")+
     "<div class='field'><label>TYPE 形式</label>"+
       "<div class='row' style='flex-wrap:nowrap'><select id='f_type'>"+typeOptions(e.type)+"</select>"+
       "<button type='button' class='btn' style='flex:none' data-act='addType'>+</button></div>"+
       "<div class='hint'>自定义形式可以在设置里删除</div></div>"+
-    "<div class='field' id='f_placeWrap'"+(slotOf(e)==="other"?" style='display:none'":"")+">"+
+    "<div class='field' id='f_placeWrap'"+((wide||slotOf(e)==="other")?" style='display:none'":"")+">"+
       "<label>PLACE 地点</label><input id='f_place' value='"+esc(e.place||"")+"'>"+
       "<div class='hint'>留空 = 还没订地方，日历上是淡黄色；填了变淡蓝色</div></div>"+
-    "<div class='field'><label>WITH 在场的人</label>"+
-      "<input id='pq' placeholder='筛选姓名' style='margin-bottom:6px'>"+
+    "<div class='field'><label>"+(wide?"BANK 给哪几家行":"WITH 在场的人")+"</label>"+
+      "<input id='pq' placeholder='"+(wide?"筛选银行":"筛选姓名")+"' style='margin-bottom:6px'>"+
       "<div class='picker' id='pkList'>"+picker+"</div>"+
-      "<div class='hint'>勾中的每个人都会同步更新上次应酬时间和内容</div></div>"+
+      "<div class='hint'>"+(wide?"整行记录，不会点亮某个人的灯，也不计入个人的上次应酬":
+        "勾中的每个人都会同步更新上次应酬时间和内容")+"</div></div>"+
     "<div class='field'><label>NOTES 聊到什么 / 拿到什么信息</label><textarea id='f_topic'>"+esc(e.topic||"")+"</textarea></div>"+
     "<div class='field'><label>FOLLOW-UP 要跟进的事</label><input id='f_follow' value='"+esc(e.followup||"")+"'></div>"+
     "<div class='field'><label>RECEIPTS 水单与支付凭证</label>"+
@@ -998,8 +1040,9 @@ function sheetEvent(id,preDate,preTrader,planned){
     (id&&e.date<today()&&e.done?"<button class='btn wide' style='margin-top:9px' data-act='noshow' data-id='"+id+"'>标为没去成，不计入</button>":"")+
     (id&&e.noshow?"<button class='btn wide' style='margin-top:9px' data-act='unshow' data-id='"+id+"'>撤销，改回已完成</button>":"")+
     (id?"<button class='btn danger wide' style='margin-top:9px' data-act='delEvent' data-id='"+id+"'>删除这条记录</button>":"");
-  openSheet(id?"编辑记录":(planned?"新计划":"记一次应酬"),b,function(root){
-    root.querySelector("#f_slot").addEventListener("click",function(ev){
+  openSheet(id?(wide?"编辑全行记录":"编辑记录"):(wide?"给全行记一次":(planned?"新计划":"记一次应酬")),b,function(root){
+    var segSlot=root.querySelector("#f_slot");
+    if(segSlot)segSlot.addEventListener("click",function(ev){
       var t=ev.target.closest("button[data-s]");if(!t)return;
       Array.prototype.forEach.call(this.children,function(c){c.classList.remove("on");});
       t.classList.add("on");
@@ -1123,6 +1166,16 @@ function gcalOpen(e){
 }
 
 /* ---------- 设置 ---------- */
+function sheetWide(id){
+  var b0=bank(id);if(!b0)return;
+  var list=wideOf(id);
+  var body="<div class='sub' style='margin-bottom:12px'>给"+esc(b0.name)+"整行的记录，比如下午茶、茶歇、节日问候。不会点亮个人的灯。</div>"+
+    "<div class='row'><button class='btn pri' data-act='wideNew' data-id='"+id+"'>记一次全行</button></div>";
+  body+="<h2 class='sec'>全行记录<small>"+list.length+" 条</small></h2>";
+  if(list.length)list.forEach(function(e){body+=evCard(e,true);});
+  else body+="<div class='sub'>还没有。</div>";
+  openSheet(b0.name+" · 全行",body);
+}
 function sheetBank(id){
   var b0=bank(id);if(!b0)return;
   var n=activeOf(id).length;
@@ -1130,6 +1183,7 @@ function sheetBank(id){
     "<div class='row'><button class='btn pri' data-act='pinBank' data-id='"+id+"'>"+
       (b0.pinned?"取消置顶":"设为置顶")+"</button>"+
     "<button class='btn' data-act='addTrader' data-id='"+id+"'>加交易员</button>"+
+    "<button class='btn' data-act='wideNew' data-id='"+id+"'>记全行</button>"+
     "<button class='btn' data-act='editBank' data-id='"+id+"'>改行名</button></div>";
   openSheet(b0.name+(b0.pinned?" ★":""),body);
 }
@@ -1251,6 +1305,7 @@ document.addEventListener("click",function(ev){
     toast(pb.pinned?"已置顶，这家行的人会进「该约了」":"已取消置顶，不再提醒");
   }
   else if(a==="bankMenu")sheetBank(id);
+  else if(a==="wideNew")sheetEvent(null,today(),null,false,id);
   else if(a==="toggleRemEv"){
     db.settings.remindEvent=db.settings.remindEvent===false;
     save();sheetSettings();
@@ -1355,27 +1410,34 @@ document.addEventListener("click",function(ev){
     var t4=trader(id);t4.status="active";t4.leftNote="";save();sheetSettings();render();
   }
   else if(a==="quickT")sheetEvent(null,today(),id,false);
+  else if(a==="wideBank")sheetWide(id);
   else if(a==="addEventOn")sheetEvent(null,el.dataset.d,null,false);
   else if(a==="addPlan")sheetEvent(null,el.dataset.d,null,true);
   else if(a==="event")sheetEvent(id);
   else if(a==="pickPhoto")document.getElementById("photoIn").click();
   else if(a==="rmPhoto"){pending.splice(+el.dataset.i,1);paintThumbs();}
   else if(a==="saveEvent"){
-    var picks=Array.prototype.map.call(document.querySelectorAll(".pick:checked"),function(x){return x.value;});
-    if(!picks.length){toast("至少选一个人");return;}
+    var wideMode=!!document.querySelector(".bpick");
+    var picks=Array.prototype.map.call(
+      document.querySelectorAll(wideMode?".bpick:checked":".pick:checked"),function(x){return x.value;});
+    if(!picks.length){toast(wideMode?"至少选一家行":"至少选一个人");return;}
     var seg=document.querySelector("#f_seg .on");
     var obj=id?event_(id):{id:uid()};
     var sl=document.querySelector("#f_slot .on");
-    obj.date=val("f_date")||today();obj.slot=sl?sl.dataset.s:"night";
-    obj.type=val("f_type");obj.place=obj.slot==="other"?"":val("f_place");
-    obj.traderIds=picks;obj.topic=val("f_topic");obj.followup=val("f_follow");
+    obj.date=val("f_date")||today();
+    obj.slot=wideMode?"other":(sl?sl.dataset.s:"night");
+    obj.type=val("f_type");
+    obj.place=(wideMode||obj.slot==="other")?"":val("f_place");
+    if(wideMode){obj.bankIds=picks;obj.traderIds=[];}
+    else{obj.traderIds=picks;obj.bankIds=[];}
+    obj.topic=val("f_topic");obj.followup=val("f_follow");
     obj.photos=pending.slice();
     obj.done=seg?seg.dataset.v==="1":true;
     obj.auto=false;
     if(!obj.done&&obj.date<today())obj.noshow=true;else delete obj.noshow;
     if(!id)db.events.push(obj);
     calSel=obj.date;
-    if(save())toast(obj.done?"已记下 "+picks.length+" 人":"已加入计划");
+    if(save())toast(obj.done?("已记下 "+picks.length+(wideMode?" 家行":" 人")):"已加入计划");
     closeSheet();render();
   }
   else if(a==="noshow"){
