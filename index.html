@@ -92,6 +92,9 @@ h2.sec small{font-family:var(--mono);font-size:11px;font-weight:400;letter-spaci
 .s-done{background:rgba(219,228,240,.09);
   background-image:linear-gradient(to top right,transparent calc(50% - .5px),rgba(219,228,240,.34) calc(50% - .5px),rgba(219,228,240,.34) calc(50% + .5px),transparent calc(50% + .5px))}
 .day.sel{box-shadow:inset 0 0 0 1px var(--brass);z-index:3}
+.day.gift::after,.day.giftp::after{content:"";position:absolute;top:3px;right:3px;
+  width:5px;height:5px;border-radius:50%;z-index:2;background:rgba(219,228,240,.5)}
+.day.giftp::after{background:var(--brass)}
 .legend{display:flex;gap:16px;margin-top:9px;font-family:var(--mono);font-size:10.5px;color:var(--dim2);letter-spacing:.04em}
 .legend{flex-wrap:wrap;row-gap:5px}
 .legend i.lg{display:inline-block;width:12px;height:12px;vertical-align:-2px;margin-right:5px;border:1px solid var(--line)}
@@ -166,6 +169,7 @@ h2.sec small{font-family:var(--mono);font-size:11px;font-weight:400;letter-spaci
 .chip{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:2px;padding:6px 11px 6px 9px;
   background:none;cursor:pointer;font-size:13.5px;color:var(--paper)}
 .chip.on{border-color:rgba(95,163,122,.5)}
+.chip.sel{border-color:var(--brass);color:var(--paper);background:rgba(155,138,216,.13)}
 .boardbank{margin-bottom:17px}
 .boardbank h3{font-size:12px;margin:0 0 8px;font-weight:600;color:var(--dim);display:flex;justify-content:space-between}
 .boardbank h3 span{font-family:var(--mono);font-weight:400}
@@ -277,7 +281,7 @@ dl.kv dd{margin:0;word-break:break-word}
 
 var KEY="fx_client_ledger_v1";
 var storeOK=true, db=null;
-var DEF_TYPES=["饭局","酒局","咖啡","高尔夫","运动","拜访","其他"];
+var DEF_TYPES=["饭局","酒局","咖啡","高尔夫","运动","拜访","礼赠","其他"];
 
 var DEF_TIERS=[{k:"A",d:30},{k:"B",d:60},{k:"C",d:90}];
 function blank(){return{v:5,settings:{cycle:"quarter",types:DEF_TYPES.slice(),tiers:JSON.parse(JSON.stringify(DEF_TIERS)),remindDays:3},banks:[],traders:[],events:[],notes:[]};}
@@ -289,6 +293,7 @@ function load(){
     d.settings=d.settings||{};
     d.settings.cycle=d.settings.cycle||"quarter";
     if(!d.settings.types||!d.settings.types.length)d.settings.types=DEF_TYPES.slice();
+    if(d.settings.types.indexOf("礼赠")<0)d.settings.types.splice(Math.max(0,d.settings.types.length-1),0,"礼赠");
     if(!d.settings.tiers||!d.settings.tiers.length)d.settings.tiers=JSON.parse(JSON.stringify(DEF_TIERS));
     if(!d.settings.remindDays)d.settings.remindDays=3;
     d.banks=d.banks||[];d.traders=d.traders||[];d.events=d.events||[];d.notes=d.notes||[];
@@ -458,6 +463,7 @@ function calendarBlock(){
     if(ds===today())cls+=" today";
     if(ds===calSel)cls+=" sel";
     var noon=slotState(evs,"noon"),night=slotState(evs,"night");
+    cls+=otherMark(evs);
     h+="<button class='"+cls+"' data-act='pick' data-d='"+ds+"'>"+
        (noon?"<span class='half top "+noon+"'></span>":"")+
        (night?"<span class='half bot "+night+"'></span>":"")+
@@ -465,7 +471,7 @@ function calendarBlock(){
   }
   h+="</div><div class='legend'><span><i class='lg d'></i>已应酬</span>"+
      "<span><i class='lg n'></i>待订地点</span><span><i class='lg t'></i>已订地点</span>"+
-     "<span>上格中午 · 下格晚上</span></div>";
+     "<span>上格中午 · 下格晚上</span><span>右上角圆点 = 其他</span></div>";
 
   var sel=db.events.filter(function(e){return e.date===calSel;})
     .sort(function(a,b){return a.done===b.done?0:(a.done?1:-1);});
@@ -477,7 +483,13 @@ function calendarBlock(){
      "<button class='btn sm' data-act='addEventOn' data-d='"+calSel+"'>记应酬</button></div>";
   return h+"</div></details>";
 }
-function slotOf(e){return e.slot==="noon"?"noon":"night";}
+function slotOf(e){return e.slot==="noon"?"noon":(e.slot==="other"?"other":"night");}
+function slotLabel(e){var x=slotOf(e);return x==="noon"?"中午":(x==="night"?"晚上":"");}
+function otherMark(evs){
+  var l=evs.filter(function(e){return slotOf(e)==="other"&&!e.noshow;});
+  if(!l.length)return "";
+  return l.some(function(e){return !e.done;})?" giftp":" gift";
+}
 function slotState(evs,slot){
   var l=evs.filter(function(e){return slotOf(e)===slot&&!e.noshow;});
   if(!l.length)return "";
@@ -490,11 +502,11 @@ function evCard(e,showDate){
     var t=trader(id);return t?t.name+"（"+bankName(t.bankId)+"）":"?";}).join(" ");
   var h="<div class='det' data-act='event' data-id='"+e.id+"'><div class='top'>"+
     (showDate?"<span class='pl'>"+md(e.date)+"</span>":"")+
-    "<span class='pl'>"+(slotOf(e)==="noon"?"中午":"晚上")+"</span>"+
+    (slotLabel(e)?"<span class='pl'>"+slotLabel(e)+"</span>":"")+
     "<span class='ty'>"+esc(e.type||"应酬")+"</span>"+
     (e.place?"<span class='pl'>"+esc(e.place)+"</span>":"")+
-    "<span class='pill"+(e.noshow?" g":(e.done?" g":(e.place?" b":"")))+"'>"+
-      (e.noshow?"未发生":(e.done?"已完成":(e.place?"已订地点":"待订地点")))+"</span>"+
+    "<span class='pill"+(e.noshow||e.done?" g":(slotOf(e)==="other"?"":(e.place?" b":"")))+"'>"+
+      (e.noshow?"未发生":(e.done?"已完成":(slotOf(e)==="other"?"计划":(e.place?"已订地点":"待订地点"))))+"</span>"+
     (e.auto&&e.done?"<span class='auto'>自动</span>":"")+"</div>"+
     "<div class='who'>"+esc(names||"未选人")+"</div>"+
     (e.topic?"<div class='txt'>"+esc(e.topic)+"</div>":"")+
@@ -739,7 +751,7 @@ function sheetNote(ds,id){
 }
 
 /* ---------- 应酬明细 ---------- */
-var rgFrom="", rgTo="", rgQ="";
+var rgFrom="", rgTo="", rgQ="", rgType="";
 function monthStart(off){
   var n=new Date(),d=new Date(n.getFullYear(),n.getMonth()+(off||0),1);
   return iso(d);
@@ -756,6 +768,7 @@ function viewEvents(){
   ensureRange();
   var list=db.events.filter(function(e){
     if(e.date<rgFrom||e.date>rgTo)return false;
+    if(rgType&&(e.type||"")!==rgType)return false;
     if(!rgQ)return true;
     var hay=(e.type||"")+" "+(e.place||"")+" "+(e.topic||"")+" "+(e.followup||"")+" "+
       e.traderIds.map(function(id){var t=trader(id);return t?t.name+" "+bankName(t.bankId):"";}).join(" ");
@@ -782,6 +795,17 @@ function viewEvents(){
      "<button class=\'btn sm\' data-act=\'rgPreset\' data-p=\'q\'>本季</button>"+
      "<button class=\'btn sm\' data-act=\'rgPreset\' data-p=\'y\'>今年</button>"+
      "<button class=\'btn sm\' data-act=\'rgPreset\' data-p=\'all\'>全部</button></div>";
+  var tcount={};
+  db.events.forEach(function(e){
+    if(e.date<rgFrom||e.date>rgTo)return;
+    var k=e.type||"其他";tcount[k]=(tcount[k]||0)+1;
+  });
+  h+="<div class=\'chips\' style=\'margin-top:12px\'>"+
+     "<button class=\'chip"+(rgType?"":" sel")+"\' data-act=\'rgType\' data-t=\'\'>全部</button>"+
+     types().map(function(x){
+       return "<button class=\'chip"+(rgType===x?" sel":"")+"\' data-act=\'rgType\' data-t=\'"+esc(x)+"\'>"+
+         esc(x)+(tcount[x]?" <span class=\'sub\'>"+tcount[x]+"</span>":"")+"</button>";
+     }).join("")+"</div>";
   h+="<div class=\'field\' style=\'margin-top:10px\'><input id=\'r_q\' placeholder=\'筛人名、银行、地点，可打拼音首字母\' value=\'"+esc(rgQ)+"\'></div>";
   h+="<div class=\'row\'><button class=\'btn pri\' data-act=\'rgGo\'>查询</button>"+
      "<button class=\'btn\' data-act=\'rgCopy\'>复制明细</button></div>";
@@ -806,13 +830,14 @@ function viewEvents(){
 }
 function rangeText(){
   ensureRange();
-  var list=db.events.filter(function(e){return e.date>=rgFrom&&e.date<=rgTo;})
+  var list=db.events.filter(function(e){
+    return e.date>=rgFrom&&e.date<=rgTo&&(!rgType||(e.type||"")===rgType);})
     .sort(function(a,b){return a.date<b.date?-1:1;});
-  var out=[md(rgFrom)+"–"+md(rgTo)+" 应酬明细（"+list.length+" 场）",""];
+  var out=[md(rgFrom)+"–"+md(rgTo)+(rgType?" "+rgType:"")+" 明细（"+list.length+" 场）",""];
   list.forEach(function(e){
     var names=e.traderIds.map(function(id){
       var t=trader(id);return t?bankName(t.bankId)+" "+t.name:"";}).filter(Boolean).join("、");
-    out.push("· "+md(e.date)+" "+(slotOf(e)==="noon"?"中午":"晚上")+" "+(e.type||"应酬")+
+    out.push("· "+md(e.date)+(slotLabel(e)?" "+slotLabel(e):"")+" "+(e.type||"应酬")+
       (e.place?"（"+e.place+"）":"")+"："+names+
       (e.topic?"。"+e.topic:"")+(e.followup?" 跟进："+e.followup:"")+
       (e.noshow?"（未发生）":(e.done?"":"（未完成）")));
@@ -939,12 +964,14 @@ function sheetEvent(id,preDate,preTrader,planned){
     "<div class='field'><label>SLOT 时段</label><div class='seg' id='f_slot' style='margin-bottom:0'>"+
       "<button type='button' data-s='noon' class='"+(slotOf(e)==="noon"?"on":"")+"'>中午</button>"+
       "<button type='button' data-s='night' class='"+(slotOf(e)==="night"?"on":"")+"'>晚上</button>"+
-      "</div><div class='hint'>中午占日历格子的上半格，晚上占下半格</div></div>"+
+      "<button type='button' data-s='other' class='"+(slotOf(e)==="other"?"on":"")+"'>其他</button>"+
+      "</div><div class='hint'>中午占日历上半格，晚上占下半格；其他（送礼、问候之类）只在格子右上角打一个点，不用填地点</div></div>"+
     "<div class='field'><label>TYPE 形式</label>"+
       "<div class='row' style='flex-wrap:nowrap'><select id='f_type'>"+typeOptions(e.type)+"</select>"+
       "<button type='button' class='btn' style='flex:none' data-act='addType'>+</button></div>"+
       "<div class='hint'>自定义形式可以在设置里删除</div></div>"+
-    "<div class='field'><label>PLACE 地点</label><input id='f_place' value='"+esc(e.place||"")+"'>"+
+    "<div class='field' id='f_placeWrap'"+(slotOf(e)==="other"?" style='display:none'":"")+">"+
+      "<label>PLACE 地点</label><input id='f_place' value='"+esc(e.place||"")+"'>"+
       "<div class='hint'>留空 = 还没订地方，日历上是淡黄色；填了变淡蓝色</div></div>"+
     "<div class='field'><label>WITH 在场的人</label>"+
       "<input id='pq' placeholder='筛选姓名' style='margin-bottom:6px'>"+
@@ -976,6 +1003,8 @@ function sheetEvent(id,preDate,preTrader,planned){
       var t=ev.target.closest("button[data-s]");if(!t)return;
       Array.prototype.forEach.call(this.children,function(c){c.classList.remove("on");});
       t.classList.add("on");
+      var w=document.getElementById("f_placeWrap");
+      if(w)w.style.display=t.dataset.s==="other"?"none":"";
     });
     root.querySelector("#f_seg").addEventListener("click",function(ev){
       var t=ev.target.closest("button[data-v]");if(!t)return;
@@ -1000,7 +1029,7 @@ function sheetEvent(id,preDate,preTrader,planned){
 
 /* ---------- 手机日历 ---------- */
 function evTimes(e){
-  var d=parse(e.date),h=slotOf(e)==="noon"?12:19;
+  var d=parse(e.date),sl0=slotOf(e),h=(sl0==="night")?19:12;
   var st=new Date(d.getFullYear(),d.getMonth(),d.getDate(),h,0,0);
   return{s:st,e:new Date(st.getTime()+7200000)};
 }
@@ -1061,7 +1090,7 @@ function icsRemind(e){
     "DTSTART;TZID=Asia/Shanghai:"+stampLocal(ra),
     "DTEND;TZID=Asia/Shanghai:"+stampLocal(en),
     "SUMMARY:"+icsEsc(remindTitle(e)),
-    "DESCRIPTION:"+icsEsc(cn(e.date)+(slotOf(e)==="noon"?" 中午":" 晚上")+" 的局；"+evDesc(e)),
+    "DESCRIPTION:"+icsEsc(cn(e.date)+(slotLabel(e)?" "+slotLabel(e):"")+"；"+evDesc(e)),
     "BEGIN:VALARM","ACTION:DISPLAY","TRIGGER:PT0S",
     "DESCRIPTION:"+icsEsc(remindTitle(e)),"END:VALARM","END:VEVENT"].join("\r\n");
 }
@@ -1338,7 +1367,7 @@ document.addEventListener("click",function(ev){
     var obj=id?event_(id):{id:uid()};
     var sl=document.querySelector("#f_slot .on");
     obj.date=val("f_date")||today();obj.slot=sl?sl.dataset.s:"night";
-    obj.type=val("f_type");obj.place=val("f_place");
+    obj.type=val("f_type");obj.place=obj.slot==="other"?"":val("f_place");
     obj.traderIds=picks;obj.topic=val("f_topic");obj.followup=val("f_follow");
     obj.photos=pending.slice();
     obj.done=seg?seg.dataset.v==="1":true;
@@ -1369,6 +1398,11 @@ document.addEventListener("click",function(ev){
     rgFrom=val("r_from")||rgFrom;rgTo=val("r_to")||rgTo;rgQ=val("r_q");
     if(rgFrom>rgTo){var tmp=rgFrom;rgFrom=rgTo;rgTo=tmp;}
     render();
+  }
+  else if(a==="rgType"){
+    var qv=document.getElementById("r_q");
+    if(qv)rgQ=qv.value.trim();
+    rgType=el.dataset.t||"";render();
   }
   else if(a==="rgPreset"){
     var pset=el.dataset.p;
